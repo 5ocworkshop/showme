@@ -25,8 +25,54 @@
 #	-Add a list of the actively loaded kernel modules (DONE)
 #	-Have auto-adjusting 'show all' option
 #	-Add color coding to improve section boundry visibility
+#	-Add last 25 lines of syslog
+#	-Add last 25 lines of .bash_history
+#	-Auto self-updater
+#		-Check for internet connection
+#	-Move to /usr/local/bin
+#	-Option to install my favorite packages in one setp
+#	-Tab for command line completion?
+#	-Use the 'fc -l -#` command for an option to display the last 20 commands typed
 
-VERSION="0.1"
+VERSION="0.21"
+
+# Arrays / Configuration
+
+# These are the local options that users can call this script with and a brief desc of each
+declare -A LOCALOPTIONS=( \
+[cpu]="The make and model of the CPU" \
+[cpufull]="The full contents of /proc/cpuinfo" \
+[kernel]="The kernel version" \
+[modules]="Active kernel modules" \
+[grub]="Grub configuration from /etc/default/grub" \
+[bootoptions]="Parameters the kernel was last booted with" \
+[interrupts]="System interuprt counters" \
+[ip]="IP address configuration for all interfaces" \
+[network]="Detailed networking configuration" \
+[versions]="OS & LinuxCNC Version info" \
+[package-versions]="Versions for all installed packages" \
+[pstree]="The current process tree" \
+[disk]="Disk space information (human readable)" \
+[mem]="Available RAM Memory" \
+[dmesg]="Kernel messages with human readable timestamps" \
+[packets]="Network interface statistics/counters" \
+[pci]="Summary of PCI/PCIe bus components" \
+[pcifull]="Verbose list of PCI/PCIe bus components" \
+[usb]="Summary of USB device info" \
+[usbfull]="Verbose USB device info" \
+[wiki]="Links to the PrintNC Wiki & Discord servers" \
+[ini]="Displays (section) from your machinename.ini LinuxCNC config file" \
+)
+
+# These are defined sections of the LinuxCNC machine.ini master file that can be referenced
+declare -A LCNC_MAIN_INI_OPTIONS=( \
+# Why not genrate this from lines that start with [ ? - Maybe for the hal file, deferred
+[x-axis]="X Axis & Joint 0" \
+[y-axis]="Y Axis & Joints 1 & 2" \
+[z-axis]="Z Axis & Joint 3" \
+[all]="Full INI file" \
+[SECTION-HEADING]="Where SECTION-HEADING is any valid (case sensitive) SECTION-heading present in the INI the LinuxCNC file" \
+)
 
 # Functions
 
@@ -81,28 +127,35 @@ if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ]; then
 	sudo apt-get install wget ethtool
 fi
 
+if [ "$1" == "options" ]; then
+	echo "${!LOCALOPTIONS[@]}"
+	exit 0
+fi
+
+
+if [ "$1" == "options-ini" ]; then
+	echo "${!LCNC_MAIN_INI_OPTIONS[@]}"
+	exit 0
+fi
+
+# Variables
+
 TIMESTAMP=$( date )
 LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
-
-# Determine how many LinuxCNC machine config directories exist
 MACHINE_COUNT=$( ls -F $LCNC_CONFIG_DIR | grep / | wc -l )
+INI_FLAG=0
+
 if [ $MACHINE_COUNT == "1" ]; then
 	MACHINE_NAME="$( ls -F $LCNC_CONFIG_DIR | grep / | sed 's/\///' )"
-	echo "Machine name is: $MACHINE_NAME"
 else
 	echo "You have more than one machine, that is not yet supported by $0"
 fi
-
 echo ""
-echo "==============================================================================="
-echo "showme: PrintNC show command for easily displaying debug info for Discord help."
-echo "==============================================================================="
-echo ""
-echo "Version $VERSION - Launched as: $0 $@"
-echo "$TIMESTAMP for host: $( hostname ) by showme ver. 0.1"
-echo ""
+echo "PrintNC Support Tool - showme - Version $VERSION - Launched as: $0 $@"
 echo "For a complete list of options, please see $0 help"
-echo "==============================================================================="
+echo ""
+echo "*** START CUT HERE ***"
+echo "$TIMESTAMP for host: $( hostname )"
 
 # If no options specified, display the help
 if [[ $# -eq 0 ]]
@@ -110,21 +163,36 @@ then
 	show_help
 fi
 
-if [ "$1" == "ini" ] && [ ! -z "$2" ]; then
+#set -x
+# While there are more than zero options, iterate through the responses and execute as appropriate
+while [[ $# -gt 0 ]] ;
+do
+#    if [ "$1" == "ini" ]; then
+    	OPTION1="$1"
+	OPTION2="$2"
+#	else
+#    	OPTION="$1";
+#	fi
+
+    shift;              #expose next argument
+    case "$OPTION1" in
+
+	"ini")
+		if [ ! -z "OPTION2" ]; then
 		# Set this up for Y, X, Z and otherwise what is specific as an argument
-		INI_SECTION="$2"
+		INI_SECTION="$OPTION2"
 		case "$INI_SECTION" in
-			"x" | "X" | "xaxis" | "XAxis")
+			"x-axis")
 				INI_SECTION="AXIS_X"
 				INI_JOINT="JOINT_0"
 				;;
 
-			"y" | "Y" | "yaxis" | "YAxis")
+			"y-axis")
 				INI_SECTION="AXIS_Y"
 				INI_JOINT="JOINT_1 JOINT_2"
 				;;
 
-			"z" | "Z" | "zaxis" | "ZAxis")
+			"z-axis")
 				INI_SECTION="AXIS_Z"
 				INI_JOINT="JOINT_3"
 				;;
@@ -132,23 +200,24 @@ if [ "$1" == "ini" ] && [ ! -z "$2" ]; then
 			"all" | "All" | "ALL")
 				cat $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.ini
 				;;
+			*)
+				echo "Option2 is $INI_SECTION"
+				INI_JOINT=""
+			;;
 
 		esac
 		# Need error checking for results being null
-		header "Output from $MACHINE_NAME.ini section $INI_SECTION"
+		header "$LCNC_CONFIG_DIR/$MACHINE_NAME.ini"
 		get_ini_section "$INI_SECTION" "$MACHINE_NAME"
 
 		for JOINT in $( echo $INI_JOINT ); do
+			echo ""
 			get_ini_section "$JOINT" "$MACHINE_NAME"
 		done
-fi
+		fi
+		INI_FLAG=1
+		;;
 
-# While there are more than zero options, iterate through the responses and execute as appropriate
-while [[ $# -gt 0 ]] ;
-do
-    OPTION="$1";
-    shift;              #expose next argument
-    case "$OPTION" in
         "cpu" | "cpuinfo" | "processor")
 		header "CPU MAKE & MODEL:"
                  grep -E 'model name' < /proc/cpuinfo
@@ -274,19 +343,17 @@ do
 		header "PrintNC Wiki & Discord: https://wiki.printnc.info & https://discord.gg/RxzPna6"
 		;; 
 
-	*) echo >&2 "Invalid option: $OPTION "
-		show_help
-		exit 1
+	*)
+		if [ "$INI_FLAG" != "1" ]; then
+			 echo >&2 "Invalid option: $OPTION "
+			show_help
+			exit 1
+		fi
 		;;
    esac
 done
-
 echo ""
-echo "*** END CUT HERE, DO NOT PASTE TEXT BELOW THIS WHEN SHARING **"
-echo "If requested, please paste the relevant sections in to the PrintNC discord for help with troubleshooting."
+echo "*** END CUT HERE ***"
+echo "PrintNC is a co-op community, please document your problem & solution on wiki."
 echo ""
-echo "PrintNC is a cooperative community, not a business.  Fellow community members are happy to help, but please"
-echo "remember the help you received and extend the same offer when you see an opportunity to help the next person."
-echo ""
-
 ## END OF SECTION TO CUT AND PASTE TO YOUR SYSTEM ##
