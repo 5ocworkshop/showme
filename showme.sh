@@ -10,6 +10,7 @@
 # Usage is: showme opt1 opt2 opt3 opt4 etc.
 #
 # Version: 0.1 - jac, May 22, 2021 - First public release, WIP
+# Version: 0.2 - jac, Maye 24, 2021 - Second public release, added INI section support & all options, WIP
 #
 # TODO:	-Iterate through LinuxCNC directory and promopt to identify machine name if necessary
 #	-Provide options to display machine.ini and machine.hal files
@@ -56,12 +57,21 @@ show_help() {
 		echo "		usb				Displays summary USB device information"
 		echo "		usbfull				Displays verbose USB device information"
 		echo "		wiki | discord			Displays the links to the PrintNC Wiki & Discord Servers"
+		echo "		ini [section]			Diaplays [section] from your machinename.ini file"
 }
 
 header() {
 	echo ""
 	echo "$1"
 	echo ""
+}
+
+# Get the section of an INI file between two strings
+# Usage: get_ini_section string1 string2 filename.ini
+# Check for correct # of arguments ariving or check in INI case section
+
+get_ini_section() {
+	sed -nr "/^\[$1\]/ { :l /^\s*[^#].*/ p; n; /^\[/ q; b l; }" $LCNC_CONFIG_DIR/"$2"/"$2".ini
 }
 
 # Check for pre-requisite packages and install if not present
@@ -72,7 +82,16 @@ if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ]; then
 fi
 
 TIMESTAMP=$( date )
+LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
 
+# Determine how many LinuxCNC machine config directories exist
+MACHINE_COUNT=$( ls -F $LCNC_CONFIG_DIR | grep / | wc -l )
+if [ $MACHINE_COUNT == "1" ]; then
+	MACHINE_NAME="$( ls -F $LCNC_CONFIG_DIR | grep / | sed 's/\///' )"
+	echo "Machine name is: $MACHINE_NAME"
+else
+	echo "You have more than one machine, that is not yet supported by $0"
+fi
 
 echo ""
 echo "==============================================================================="
@@ -89,6 +108,39 @@ echo "==========================================================================
 if [[ $# -eq 0 ]]
 then
 	show_help
+fi
+
+if [ "$1" == "ini" ] && [ ! -z "$2" ]; then
+		# Set this up for Y, X, Z and otherwise what is specific as an argument
+		INI_SECTION="$2"
+		case "$INI_SECTION" in
+			"x" | "X" | "xaxis" | "XAxis")
+				INI_SECTION="AXIS_X"
+				INI_JOINT="JOINT_0"
+				;;
+
+			"y" | "Y" | "yaxis" | "YAxis")
+				INI_SECTION="AXIS_Y"
+				INI_JOINT="JOINT_1 JOINT_2"
+				;;
+
+			"z" | "Z" | "zaxis" | "ZAxis")
+				INI_SECTION="AXIS_Z"
+				INI_JOINT="JOINT_3"
+				;;
+
+			"all" | "All" | "ALL")
+				cat $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.ini
+				;;
+
+		esac
+		# Need error checking for results being null
+		header "Output from $MACHINE_NAME.ini section $INI_SECTION"
+		get_ini_section "$INI_SECTION" "$MACHINE_NAME"
+
+		for JOINT in $( echo $INI_JOINT ); do
+			get_ini_section "$JOINT" "$MACHINE_NAME"
+		done
 fi
 
 # While there are more than zero options, iterate through the responses and execute as appropriate
