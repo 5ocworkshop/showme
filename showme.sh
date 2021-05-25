@@ -14,7 +14,7 @@
 #	-Add version info to header (DONE)
 #	-Add a list of the actively loaded kernel modules (DONE)
 #
-# Version: 0.2 - jac, May 24, 2021 - Second public release, added INI section support, WIP
+# Version: 0.23 - jac, May 24, 2021 - Second public release, added INI section support, WIP
 #	-Tab for command line completion? (DONE!)
 #		./showme [TAB] will display options for top level
 #			AND
@@ -31,6 +31,7 @@
 #		showme syslog
 #	-Provide last 50 lines of typed commands (DONE)
 #		showme history
+#	-Changed IP address to only output ipv4 addresses
 #	-Add note about community, if you receive, make sure to give too (DONE)
 #	-Moved internal version control on to GitHub
 #	-Restructured options to in to array for flexibility and extensibility
@@ -45,7 +46,7 @@
 #	-Move to /usr/local/bin (use install?)
 #	-Option to install recommended packages in one setp
 
-VERSION="0.22"
+VERSION="0.23"
 
 # Arrays / Configuration
 
@@ -89,6 +90,88 @@ declare -A LCNC_MAIN_INI_OPTIONS=( \
 
 # Functions
 
+enable_completions() {
+#set -x
+KEY="PNCSHOWME"
+BASHRC="/etc/bash.bashrc"
+COMPDIR="/usr/share/bash-completion/completions/"
+TMPFILE="/tmp/foo"
+CHECK_COMP=$( grep "$KEY" "$BASHRC" )
+
+if [ -z "$CHECK_COMP" ] && [ ! -f $BASHRC.back ]; then
+	echo "TAB Autocomplete not enabled, enabling."
+	# Need a test for internet access here
+	sudo apt-get install bash-completion
+# The completions file for this script
+if [ ! -f $COMPDIR/showme ]; then
+{
+  # This is known as the 'herefile' trick
+  ## EVERYTHING BELOW HERE UNTIL THE EOF IS LITERAL
+  cat <<'EOF'
+#/usr/bin/env bash
+_showme() {
+local cur prev
+
+  COMPREPLY=()
+  cur=${COMP_WORDS[COMP_CWORD]}
+  prev=${COMP_WORDS[COMP_CWORD-1]}
+
+  if [ $COMP_CWORD -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "$(showme options)" -- $cur) )
+  elif [ $COMP_CWORD -eq 2 ]; then
+    case "$prev" in
+      "ini")
+        COMPREPLY=( $(compgen -W "$(showme options-ini)" -- $cur) )
+        ;;
+      "deploy")
+        COMPREPLY=( $(compgen -W "all current" -- $cur) )
+        ;;
+      *)
+        ;;
+    esac
+  fi
+
+  return 0
+} &&
+complete -F _showme showme
+EOF
+} > $TMPFILE
+
+	# Correct the file permissions before putting it in place
+	sudo chown root.root $TMPFILE
+	sudo chmod 0644 $TMPFILE
+	sudo mv $TMPFILE $COMPDIR/showme
+fi
+
+	echo "Copying $BASHRC to $BASHRC.back"
+	sudo cp $BASHRC $BASHRC.back
+	# enable bash completion in interactive shells
+	cat $BASHRC > $TMPFILE
+{
+# Everything below here until the EOF is LITERAL
+cat << 'EOF'
+## Added by PrintNC showme script KEY=PNCSHOWME for bash auto completion enable
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+## END PrintNC
+EOF
+} >> $TMPFILE
+	sudo chown root.root $TMPFILE
+	sudo chmod 0644 $TMPFILE
+	sudo mv $TMPFILE $BASHRC
+	echo "Confirming update:"
+	grep "$KEY" "$BASHRC"
+	echo ""
+	echo "*** NOTE: Your $BASHRC has been updated, you will need to exit this terminal window and open it again to complete the installation."
+	echo ""
+fi
+}
+
 show_help() {
 		header "USAGE: $0 [tab] opt1 [opt2] [opt3]"
 		echo "Where options are one or more of the following available for display:"
@@ -113,8 +196,16 @@ get_ini_section() {
 	sed -nr "/^\\[$1\\]/ { :l /^\\s*[^#].*/ p; n; /^\\[/ q; b l; }" "$LCNC_CONFIG_DIR"/"$2"/"$2".ini
 }
 
+# Begin Main
+
+# If we don't exist in /usr/bin, install us there
+if [ ! -f /usr/bin/showme ]; then
+	echo "Moving this command to /usr/bin so you can run it from anywhere on the system and enjoy [tab][tab] auto-completion."
+	sudo cp $0 /usr/bin/showme
+fi
+
 # Check for pre-requisite packages and install if not present
-if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ]; then
+if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ] || [ ! -e /usr/sbin/ethtool ]; then
 	echo "WARN: wget and/or ethtool are not installed, installing..."
 	echo "		Please provide password when promted"
 	sudo apt-get install wget ethtool
@@ -131,8 +222,10 @@ if [ "$1" == "options-ini" ]; then
 	exit 0
 fi
 
-# Variables
+# Check & if necessary, update system bashrc for auto-completion
+enable_completions
 
+# Variables
 TIMESTAMP=$( date '+%D - %T')
 LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
 MACHINE_COUNT=$( ls -F "$LCNC_CONFIG_DIR" | grep -c / )
@@ -144,7 +237,7 @@ else
 	echo "You have more than one machine, selecting config file not yet supported by $0"
 fi
 
-clear
+#clear
 
 echo ""
 echo "PrintNC COMMUNITY SUPPORT TOOL - showme - V. $VERSION - Launched as: $0 $@"

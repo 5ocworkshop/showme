@@ -1,5 +1,5 @@
 #/usr/bin/env bash
-showme-completions() {
+_showme() {
 local cur prev
 
   COMPREPLY=()
@@ -7,11 +7,11 @@ local cur prev
   prev=${COMP_WORDS[COMP_CWORD-1]}
 
   if [ $COMP_CWORD -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "$(./showme.sh options)" -- $cur) )
+    COMPREPLY=( $(compgen -W "$(showme options)" -- $cur) )
   elif [ $COMP_CWORD -eq 2 ]; then
     case "$prev" in
       "ini")
-        COMPREPLY=( $(compgen -W "$(./showme.sh options-ini)" -- $cur) )
+        COMPREPLY=( $(compgen -W "$(showme options-ini)" -- $cur) )
         ;;
       "deploy")
         COMPREPLY=( $(compgen -W "all current" -- $cur) )
@@ -23,5 +23,5 @@ local cur prev
 
   return 0
 } &&
-complete -F showme-completions showme.sh
+complete -F _showme showme
 
