@@ -10,31 +10,42 @@
 # Usage is: showme opt1 opt2 opt3 opt4 etc.
 #
 # Version: 0.1 - jac, May 22, 2021 - First public release, WIP
-# Version: 0.2 - jac, Maye 24, 2021 - Second public release, added INI section support & all options, WIP
-#
-# TODO:	-Iterate through LinuxCNC directory and promopt to identify machine name if necessary
-#	-Provide options to display machine.ini and machine.hal files
-#	-Provide options to display a section (joint/axis) of machine.ini and machine.hal files
-#	-Proviede last X numbers of key system log files
-# 	-Anything else we regularly need
-#	-Better error and exit handling
-#	-Delinting
 #	-Add PrintNC Discord Link and Wiki Linux (DONE)
-#	-Add note about community, if you take, make sure to give (DONE)
 #	-Add version info to header (DONE)
 #	-Add a list of the actively loaded kernel modules (DONE)
-#	-Have auto-adjusting 'show all' option
-#	-Add color coding to improve section boundry visibility
-#	-Add last 25 lines of syslog
-#	-Add last 25 lines of .bash_history
+#
+# Version: 0.2 - jac, May 24, 2021 - Second public release, added INI section support, WIP
+#	-Tab for command line completion? (DONE!)
+#		./showme [TAB] will display options for top level
+#			AND
+#		./showme ini [TAB] will display options for your machine ini file
+#
+#	-Provide options to display all of machine.ini file (DONE)
+#		showme ini all
+#	-Provide option to display specific axis (and associated joints) (DONE)
+#		showme ini x-axis
+#	-Provide options to display any section with named [HEADER] of machine.ini file (DONE)
+#		showme ini HEADER # note, case sensitive for example
+#		showme ini KINS # will return the KINS section if it exists
+#	-Provide last 50 lines of main system log (DONE)
+#		showme syslog
+#	-Provide last 50 lines of typed commands (DONE)
+#		showme history
+#	-Add note about community, if you receive, make sure to give too (DONE)
+#	-Moved internal version control on to GitHub
+#	-Restructured options to in to array for flexibility and extensibility
+#	-Reduced size of header and footer, changed presentation of CUT marks
+#
+# TODO:	-Iterate through LinuxCNC directory and promopt to identify machine name if necessary
+#	-Provide option to display  machinehal.hal files
+#	-Better error and exit handling
+#	-Add color coding to improve section boundry visibility (under consideration)
 #	-Auto self-updater
 #		-Check for internet connection
-#	-Move to /usr/local/bin
-#	-Option to install my favorite packages in one setp
-#	-Tab for command line completion?
-#	-Use the 'fc -l -#` command for an option to display the last 20 commands typed
+#	-Move to /usr/local/bin (use install?)
+#	-Option to install recommended packages in one setp
 
-VERSION="0.21"
+VERSION="0.22"
 
 # Arrays / Configuration
 
@@ -62,11 +73,13 @@ declare -A LOCALOPTIONS=( \
 [usbfull]="Verbose USB device info" \
 [wiki]="Links to the PrintNC Wiki & Discord servers" \
 [ini]="Displays (section) from your machinename.ini LinuxCNC config file" \
+[syslog]="Show last 50 lines of /var/log/syslog" \
+[history]="Show last 50 lines of bash shell history" \
 )
 
 # These are defined sections of the LinuxCNC machine.ini master file that can be referenced
 declare -A LCNC_MAIN_INI_OPTIONS=( \
-# Why not genrate this from lines that start with [ ? - Maybe for the hal file, deferred
+# Why not generate this from lines that start with [ ? - Maybe for the hal file, deferred
 [x-axis]="X Axis & Joint 0" \
 [y-axis]="Y Axis & Joints 1 & 2" \
 [z-axis]="Z Axis & Joint 3" \
@@ -77,33 +90,13 @@ declare -A LCNC_MAIN_INI_OPTIONS=( \
 # Functions
 
 show_help() {
-		header "USAGE:"
-		echo "$0 opt1 [opt2] [opt3]"
-		echo "Where options are one or more of the following:"
+		header "USAGE: $0 [tab] opt1 [opt2] [opt3]"
+		echo "Where options are one or more of the following available for display:"
 		echo ""
-		echo "Options (OS/System):"
-		echo "		cpu | cpuinfo | processor	Displays the make and model of the CPU"
-		echo "		cpufull | cpuall 		Displays the full /proc/cpuinfo"
-		echo "		kernel | kernel-version		Displays the kernel version"
-		echo "		modules				Displays the active kernel modules"
-		echo "		grub				Displays grub configuration"
-		echo "		cmdline | bootoptions		Displays the parameters the kernel was booted with"
-		echo "		interrupts | irq | irqs		Display system interupt counters"
-		echo "		ip				Displays IP adddress configuration"
-		echo "		network | networking		Displays networking configuration"
-		echo "		versions			Displays OS and LinuxCNC versions"
-		echo "		package-versions 		Displays versions for all installed packages"
-		echo "		processes | pstree		Displays the current process tree"
-		echo "		disks | disk | df		Displays human readable disk space info"
-		echo "		mem | memory | ram | free	Displays human readable RAM info"
-		echo "		dmesg				Displays human time-stamped kernel messages"
-		echo "		packets | ethstats		Displays network interface statistics/counters"
-		echo "		pci | pcie			Displays summary of PCI/PCIe bus components"
-		echo "		pcifull | pciefull		Displays verbose output of PCI/PCIe bus components"
-		echo "		usb				Displays summary USB device information"
-		echo "		usbfull				Displays verbose USB device information"
-		echo "		wiki | discord			Displays the links to the PrintNC Wiki & Discord Servers"
-		echo "		ini [section]			Diaplays [section] from your machinename.ini file"
+
+		for key in "${!LOCALOPTIONS[@]}"; do
+  			printf "\\t\\t%-20s\\t\\t%s\\n" "$key" "${LOCALOPTIONS[$key]}"
+		done | sort -t : -k 2n
 }
 
 header() {
@@ -117,7 +110,7 @@ header() {
 # Check for correct # of arguments ariving or check in INI case section
 
 get_ini_section() {
-	sed -nr "/^\[$1\]/ { :l /^\s*[^#].*/ p; n; /^\[/ q; b l; }" $LCNC_CONFIG_DIR/"$2"/"$2".ini
+	sed -nr "/^\\[$1\\]/ { :l /^\\s*[^#].*/ p; n; /^\\[/ q; b l; }" "$LCNC_CONFIG_DIR"/"$2"/"$2".ini
 }
 
 # Check for pre-requisite packages and install if not present
@@ -140,45 +133,45 @@ fi
 
 # Variables
 
-TIMESTAMP=$( date )
+TIMESTAMP=$( date '+%D - %T')
 LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
-MACHINE_COUNT=$( ls -F $LCNC_CONFIG_DIR | grep / | wc -l )
-INI_FLAG=0
+MACHINE_COUNT=$( ls -F "$LCNC_CONFIG_DIR" | grep -c / )
+INI_FLAG=0 # The INI argument has sub-arguments of its own
 
-if [ $MACHINE_COUNT == "1" ]; then
-	MACHINE_NAME="$( ls -F $LCNC_CONFIG_DIR | grep / | sed 's/\///' )"
+if [ "$MACHINE_COUNT" == "1" ]; then
+	MACHINE_NAME="$( ls -F "$LCNC_CONFIG_DIR" | grep / | sed 's/\///' )"
 else
-	echo "You have more than one machine, that is not yet supported by $0"
+	echo "You have more than one machine, selecting config file not yet supported by $0"
 fi
-echo ""
-echo "PrintNC Support Tool - showme - Version $VERSION - Launched as: $0 $@"
-echo "For a complete list of options, please see $0 help"
-echo ""
-echo "*** START CUT HERE ***"
-echo "$TIMESTAMP for host: $( hostname )"
 
+clear
+
+echo ""
+echo "PrintNC COMMUNITY SUPPORT TOOL - showme - V. $VERSION - Launched as: $0 $@"
+echo "For a complete list of options, please see $0 help. [TAB] Completion supported."
+echo ""
 # If no options specified, display the help
 if [[ $# -eq 0 ]]
 then
 	show_help
+	exit 0
 fi
 
-#set -x
+printf "\\t\\t\\t*** START CUT HERE ***\\n"
+echo "$TIMESTAMP for host: $( hostname )"
+
+
 # While there are more than zero options, iterate through the responses and execute as appropriate
 while [[ $# -gt 0 ]] ;
 do
-#    if [ "$1" == "ini" ]; then
     	OPTION1="$1"
 	OPTION2="$2"
-#	else
-#    	OPTION="$1";
-#	fi
 
     shift;              #expose next argument
     case "$OPTION1" in
 
 	"ini")
-		if [ ! -z "OPTION2" ]; then
+		if [ ! -z "$OPTION2" ]; then
 		# Set this up for Y, X, Z and otherwise what is specific as an argument
 		INI_SECTION="$OPTION2"
 		case "$INI_SECTION" in
@@ -198,10 +191,9 @@ do
 				;;
 
 			"all" | "All" | "ALL")
-				cat $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.ini
+				cat "$LCNC_CONFIG_DIR"/"$MACHINE_NAME"/"$MACHINE_NAME".ini
 				;;
 			*)
-				echo "Option2 is $INI_SECTION"
 				INI_JOINT=""
 			;;
 
@@ -210,7 +202,7 @@ do
 		header "$LCNC_CONFIG_DIR/$MACHINE_NAME.ini"
 		get_ini_section "$INI_SECTION" "$MACHINE_NAME"
 
-		for JOINT in $( echo $INI_JOINT ); do
+		for JOINT in $INI_JOINT; do
 			echo ""
 			get_ini_section "$JOINT" "$MACHINE_NAME"
 		done
@@ -246,7 +238,7 @@ do
 
 	"ip")
 		header "IP ADDRESSES (provide passwd if prompted):"
-		ip address
+		ip -4 address
 		;;
 
 	"network" | "networking")
@@ -343,9 +335,19 @@ do
 		header "PrintNC Wiki & Discord: https://wiki.printnc.info & https://discord.gg/RxzPna6"
 		;; 
 
+	"syslog")
+		header "LAST 50 LINES OF SYSLOG:"
+		sudo tail -50 /var/log/syslog
+		;;
+
+	"history")
+		header "LAST 50 COMMANDS:"
+		tail -50 "$HOME"/.bash_history
+		;;
+
 	*)
 		if [ "$INI_FLAG" != "1" ]; then
-			 echo >&2 "Invalid option: $OPTION "
+			 echo >&2 "Invalid option: $OPTION1 "
 			show_help
 			exit 1
 		fi
@@ -353,7 +355,9 @@ do
    esac
 done
 echo ""
-echo "*** END CUT HERE ***"
-echo "PrintNC is a co-op community, please document your problem & solution on wiki."
+printf "\\t\\t\\t*** END CUT HERE ***\\n"
+echo ""
+echo "PrintNC is a co-op community, once resolved, please take the time to"
+echo "document your problem & solution on the PrintNC wiki to help the next person."
 echo ""
 ## END OF SECTION TO CUT AND PASTE TO YOUR SYSTEM ##
