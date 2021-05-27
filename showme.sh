@@ -42,6 +42,7 @@
 #		-showme hal string pattern matches supplied string (e.g. home, 7i96, etc)
 #       -Refined machine.ini parsing logic
 #	-Changed versions command to use output of lsb_release -a
+#	-Added headings option to show ini, to list all headings in the machine.ini file
 #
 # TODO:	-Iterate through LinuxCNC directory and promopt to identify machine name if necessary
 #	-Provide option to display  machinehal.hal files
@@ -106,6 +107,7 @@ declare -A LCNC_MAIN_INI_OPTIONS=( \
 [y-axis]="Y Axis & Joints 1 & 2" \
 [z-axis]="Z Axis & Joint 3" \
 [all]="Full INI file" \
+[headings]="A list of all existing section headings" \
 [SECTION-HEADING]="Where SECTION-HEADING is any valid (case sensitive) SECTION-heading present in the INI the LinuxCNC file" \
 )
 
@@ -307,6 +309,11 @@ do
 				INI_JOINT="JOINT_3"
 				;;
 
+			"headings")
+				# Grab all the lines that start with [
+				grep "^\[" "$LCNC_CONFIG_DIR"/"$MACHINE_NAME"/"$MACHINE_NAME".ini
+				;;
+
 			"all" | "All" | "ALL")
 				header "FULL OUTPUT OF: $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.ini"
 				cat "$LCNC_CONFIG_DIR"/"$MACHINE_NAME"/"$MACHINE_NAME".ini
@@ -479,7 +486,6 @@ do
 		;;
 
 	*)
-		echo "HAL FLAG IS: $HAL_FLAG"
 		if [ "$SUBOPTION_FLAG" != "1" ]; then
 			 echo >&2 "Invalid option: $OPTION1 "
 			show_help
