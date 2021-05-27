@@ -37,6 +37,12 @@
 #	-Restructured options to in to array for flexibility and extensibility
 #	-Reduced size of header and footer, changed presentation of CUT marks
 #
+# Version: 0.30 - jac - May 27, 2021
+#       -Initial suport for HAL config file
+#		-showme hal string pattern matches supplied string (e.g. home, 7i96, etc)
+#       -Refined machine.ini parsing logic
+#	-Changed versions command to use output of lsb_release -a
+#
 # TODO:	-Iterate through LinuxCNC directory and promopt to identify machine name if necessary
 #	-Provide option to display  machinehal.hal files
 #	-Better error and exit handling
@@ -45,8 +51,20 @@
 #		-Check for internet connection
 #	-Move to /usr/local/bin (use install?)
 #	-Option to install recommended packages in one setp
+#	-Consider when completions file is updated and how determined
 
-VERSION="0.23"
+# Variables
+VERSION="0.3"
+COMP_VERSION="1"
+TIMESTAMP=$( date '+%D - %T')
+LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
+MACHINE_COUNT=$( ls -F "$LCNC_CONFIG_DIR" | grep -c / )
+INI_FLAG=0 # The INI argument has sub-arguments of its own
+if [ "$MACHINE_COUNT" == "1" ]; then
+	MACHINE_NAME="$( ls -F "$LCNC_CONFIG_DIR" | grep / | sed 's/\///' )"
+else
+	echo "You have more than one machine, selecting INI/HAL config file not yet supported by $0"
+fi
 
 # Arrays / Configuration
 
@@ -57,7 +75,7 @@ declare -A LOCALOPTIONS=( \
 [kernel]="The kernel version" \
 [modules]="Active kernel modules" \
 [grub]="Grub configuration from /etc/default/grub" \
-[bootoptions]="Parameters the kernel was last booted with" \
+[cmdline]="Kernel boot Parameters the kernel was last booted with" \
 [interrupts]="System interuprt counters" \
 [ip]="IP address configuration for all interfaces" \
 [network]="Detailed networking configuration" \
@@ -74,10 +92,13 @@ declare -A LOCALOPTIONS=( \
 [usbfull]="Verbose USB device info" \
 [wiki]="Links to the PrintNC Wiki & Discord servers" \
 [ini]="Displays (section) from your machinename.ini LinuxCNC config file" \
+[hal]="Displays (pattern) from your machinename.hal LinuxCNC HAL config file" \
 [syslog]="Show last 50 lines of /var/log/syslog" \
 [history]="Show last 50 lines of bash shell history" \
 )
 
+
+# INI - machine.ini
 # These are defined sections of the LinuxCNC machine.ini master file that can be referenced
 declare -A LCNC_MAIN_INI_OPTIONS=( \
 # Why not generate this from lines that start with [ ? - Maybe for the hal file, deferred
@@ -95,6 +116,8 @@ enable_completions() {
 KEY="PNCSHOWME"
 BASHRC="/etc/bash.bashrc"
 COMPDIR="/usr/share/bash-completion/completions/"
+# Only necessary to increment if new commands with sub-commands are added
+# New top level commands auto-populate already
 TMPFILE="/tmp/foo"
 CHECK_COMP=$( grep "$KEY" "$BASHRC" )
 
@@ -137,6 +160,9 @@ complete -F _showme showme
 EOF
 } > $TMPFILE
 
+	# Add the version # to the bottom of the completions file
+	# For use in future when determining if completions file requires updating
+        echo "# COMPVERSION=$COMP_VERSION" >> $TMPFILE
 	# Correct the file permissions before putting it in place
 	sudo chown root.root $TMPFILE
 	sudo chmod 0644 $TMPFILE
@@ -147,6 +173,7 @@ fi
 	sudo cp $BASHRC $BASHRC.back
 	# enable bash completion in interactive shells
 	cat $BASHRC > $TMPFILE
+
 {
 # Everything below here until the EOF is LITERAL
 cat << 'EOF'
@@ -172,6 +199,7 @@ EOF
 fi
 }
 
+# Dispay help options from array
 show_help() {
 		header "USAGE: $0 [tab] opt1 [opt2] [opt3]"
 		echo "Where options are one or more of the following available for display:"
@@ -182,18 +210,27 @@ show_help() {
 		done | sort -t : -k 2n
 }
 
+# Formatting of output header
 header() {
 	echo ""
 	echo "$1"
 	echo ""
 }
 
+# INI - machine.ini
 # Get the section of an INI file between two strings
 # Usage: get_ini_section string1 string2 filename.ini
 # Check for correct # of arguments ariving or check in INI case section
 
 get_ini_section() {
 	sed -nr "/^\\[$1\\]/ { :l /^\\s*[^#].*/ p; n; /^\\[/ q; b l; }" "$LCNC_CONFIG_DIR"/"$2"/"$2".ini
+}
+
+# HAL - machine.hal
+# Get the lines from the machine.hal file that match pattern
+# Uasge: get_hal_lines string1 filename
+get_hal_lines() {
+	grep "$1" "$LCNC_CONFIG_DIR"/"$2"/"$2".hal
 }
 
 # Begin Main
@@ -211,12 +248,13 @@ if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ] || [ ! -e /usr/sbin/etht
 	sudo apt-get install wget ethtool
 fi
 
+# Option to display top level options, used for auto completion
 if [ "$1" == "options" ]; then
 	echo "${!LOCALOPTIONS[@]}"
 	exit 0
 fi
 
-
+# Option to display ini sub-options, used for auto completion
 if [ "$1" == "options-ini" ]; then
 	echo "${!LCNC_MAIN_INI_OPTIONS[@]}"
 	exit 0
@@ -224,18 +262,6 @@ fi
 
 # Check & if necessary, update system bashrc for auto-completion
 enable_completions
-
-# Variables
-TIMESTAMP=$( date '+%D - %T')
-LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
-MACHINE_COUNT=$( ls -F "$LCNC_CONFIG_DIR" | grep -c / )
-INI_FLAG=0 # The INI argument has sub-arguments of its own
-
-if [ "$MACHINE_COUNT" == "1" ]; then
-	MACHINE_NAME="$( ls -F "$LCNC_CONFIG_DIR" | grep / | sed 's/\///' )"
-else
-	echo "You have more than one machine, selecting config file not yet supported by $0"
-fi
 
 #clear
 
@@ -253,7 +279,6 @@ fi
 printf "\\t\\t\\t*** START CUT HERE ***\\n"
 echo "$TIMESTAMP for host: $( hostname )"
 
-
 # While there are more than zero options, iterate through the responses and execute as appropriate
 while [[ $# -gt 0 ]] ;
 do
@@ -262,10 +287,9 @@ do
 
     shift;              #expose next argument
     case "$OPTION1" in
-
 	"ini")
 		if [ ! -z "$OPTION2" ]; then
-		# Set this up for Y, X, Z and otherwise what is specific as an argument
+		# Set this up for X, Y (dual joints), Z and otherwise what is specific as an argument
 		INI_SECTION="$OPTION2"
 		case "$INI_SECTION" in
 			"x-axis")
@@ -284,23 +308,40 @@ do
 				;;
 
 			"all" | "All" | "ALL")
+				header "FULL OUTPUT OF: $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.ini"
 				cat "$LCNC_CONFIG_DIR"/"$MACHINE_NAME"/"$MACHINE_NAME".ini
+				INI_SECTION="ALL"
 				;;
 			*)
 				INI_JOINT=""
 			;;
 
 		esac
-		# Need error checking for results being null
-		header "$LCNC_CONFIG_DIR/$MACHINE_NAME.ini"
-		get_ini_section "$INI_SECTION" "$MACHINE_NAME"
+		# If only sending sections, add the header and interate through related joints
+                if [ "$INI_SECTION" != "ALL" ]; then
+                        # No need to mention section name as it appears at the top of the file output
+                        header "$LCNC_CONFIG_DIR/$MACHINE_NAME.ini"
+                        get_ini_section "$INI_SECTION" "$MACHINE_NAME"
 
-		for JOINT in $INI_JOINT; do
-			echo ""
-			get_ini_section "$JOINT" "$MACHINE_NAME"
-		done
+                        for JOINT in $INI_JOINT; do
+                                echo ""
+                                get_ini_section "$JOINT" "$MACHINE_NAME"
+                        done
+                        fi
+                fi
+                SUBOPTION_FLAG=1
+                ;;
+
+	"hal")
+		if [ ! -z "$OPTION2" ]; then
+			header "MATCHING PATTERN: $OPTION2 in $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.hal" 
+			get_hal_lines "$OPTION2" "$MACHINE_NAME"
+
+		else
+		 	header "DISPLAYING ALL LINES FROM: $LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.hal"
+			cat "$LCNC_CONFIG_DIR/$MACHINE_NAME/$MACHINE_NAME.hal"
 		fi
-		INI_FLAG=1
+		SUBOPTION_FLAG=1
 		;;
 
         "cpu" | "cpuinfo" | "processor")
@@ -328,9 +369,8 @@ do
 		cat /proc/interrupts
 		;;
 
-
 	"ip")
-		header "IP ADDRESSES (provide passwd if prompted):"
+		header "IP ADDRESSES - provide passwd if prompted:"
 		ip -4 address
 		;;
 
@@ -360,7 +400,7 @@ do
 
 	"versions" | "os-version" | "os" | "linuxcnc-version" | "linuxcnc-versions" | "linuxcncversion")
 		header "OS VERSION:"
-		cat /etc/issue
+		lsb_release -a
 		header "LINUXCNC PACKAGE VERSIONS:"
 		apt list --installed | grep linuxcnc
 		;;
@@ -439,7 +479,8 @@ do
 		;;
 
 	*)
-		if [ "$INI_FLAG" != "1" ]; then
+		echo "HAL FLAG IS: $HAL_FLAG"
+		if [ "$SUBOPTION_FLAG" != "1" ]; then
 			 echo >&2 "Invalid option: $OPTION1 "
 			show_help
 			exit 1
