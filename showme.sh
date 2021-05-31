@@ -68,13 +68,13 @@ COMP_VERSION="1"
 TIMESTAMP=$( date '+%D - %T')
 LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
 MACHINE_COUNT=$( ls -F "$LCNC_CONFIG_DIR" | grep -c / )
-INI_FLAG=0 # The INI argument has sub-arguments of its own
+SUBOPTION_FLAG=0 # The flag for arguments that have sub-arguments of their own
 # Note, if you add a package you still need to add an explicit test for a binary further down
 REQD_PACKAGES="wget ethtool pciutils usbutils"
 # To be added in the future for suggested packages that this script isn't dependent on
 #RECD_PACKAGES="locate zip unzip" 
 
-if [ -d $LCNC_CONFIG_DIR ]; then
+if [ -d "$LCNC_CONFIG_DIR" ]; then
 	if [ "$MACHINE_COUNT" == "1" ]; then
 		MACHINE_NAME="$( ls -F "$LCNC_CONFIG_DIR" | grep / | sed 's/\///' )"
 	else
@@ -260,7 +260,7 @@ get_hal_lines() {
 if [ ! -f /usr/bin/showme ]; then
 	# Should this use variables for portability in future?
 	echo "Moving this command to /usr/bin so you can run it from anywhere on the system and enjoy [tab][tab] auto-completion."
-	sudo cp $0 /usr/bin/showme
+	sudo cp "$0" /usr/bin/showme
 	echo "Setting permissions on /usr/bin/showme"
 	sudo chown root.root /usr/bin/showme
 	sudo chmod 755 /usr/bin/showme
