@@ -38,33 +38,50 @@
 #	-Reduced size of header and footer, changed presentation of CUT marks
 #
 # Version: 0.30 - jac - May 27, 2021
-#       -Initial suport for HAL config file
+#       -Initial suport for displaying LinuxCNC HAL config file
 #		-showme hal string pattern matches supplied string (e.g. home, 7i96, etc)
+#		-no string will match all
 #       -Refined machine.ini parsing logic
 #	-Changed versions command to use output of lsb_release -a
 #	-Added headings option to show ini, to list all headings in the machine.ini file
 #
+# Verion: 0.41 - jac - May 31, 2021
+#	-Ensure ownership, group and permissions set automatically on install to /usr/bin/
+#	-Only set initial LinuxCNC variables if LinuxCNC config directory exists
+#	-Added required packages pciutils and usbutils for probing buses for hardware
+#	-Added alias for rm to be 'rm -i' to bashrc to enable confirmation of deletions for new users
+#
 # TODO:	-Iterate through LinuxCNC directory and promopt to identify machine name if necessary
-#	-Provide option to display  machinehal.hal files
 #	-Better error and exit handling
 #	-Add color coding to improve section boundry visibility (under consideration)
 #	-Auto self-updater
 #		-Check for internet connection
-#	-Move to /usr/local/bin (use install?)
 #	-Option to install recommended packages in one setp
 #	-Consider when completions file is updated and how determined
+#	-Add installation of Xanmod kernel (deferred, details on Wiki and Xanmod.org)
+#	-Add option to set net.ifnames=0 in grub commandline
+#		-Tricky as will break existing network config and require intervention
 
 # Variables
-VERSION="0.3"
+VERSION="0.41"
 COMP_VERSION="1"
 TIMESTAMP=$( date '+%D - %T')
 LCNC_CONFIG_DIR="$HOME/linuxcnc/configs"
 MACHINE_COUNT=$( ls -F "$LCNC_CONFIG_DIR" | grep -c / )
 INI_FLAG=0 # The INI argument has sub-arguments of its own
-if [ "$MACHINE_COUNT" == "1" ]; then
-	MACHINE_NAME="$( ls -F "$LCNC_CONFIG_DIR" | grep / | sed 's/\///' )"
+# Note, if you add a package you still need to add an explicit test for a binary further down
+REQD_PACKAGES="wget ethtool pciutils usbutils"
+# To be added in the future for suggested packages that this script isn't dependent on
+#RECD_PACKAGES="locate zip unzip" 
+
+if [ -d $LCNC_CONFIG_DIR ]; then
+	if [ "$MACHINE_COUNT" == "1" ]; then
+		MACHINE_NAME="$( ls -F "$LCNC_CONFIG_DIR" | grep / | sed 's/\///' )"
+	else
+		echo "You have more than one machine, selecting INI/HAL config file not yet supported by $0"
+	fi
 else
-	echo "You have more than one machine, selecting INI/HAL config file not yet supported by $0"
+	echo "Looks like LinuxCNC hasn't been configured yet, so 'ini' and 'hal' options are not relveant."
 fi
 
 # Arrays / Configuration
@@ -187,6 +204,8 @@ if ! shopt -oq posix; then
     . /etc/bash_completion
   fi
 fi
+# Alias the remove command to be interactive to avoid accidental deletions by new users
+alias rm='rm -i'
 ## END PrintNC
 EOF
 } >> $TMPFILE
@@ -239,15 +258,22 @@ get_hal_lines() {
 
 # If we don't exist in /usr/bin, install us there
 if [ ! -f /usr/bin/showme ]; then
+	# Should this use variables for portability in future?
 	echo "Moving this command to /usr/bin so you can run it from anywhere on the system and enjoy [tab][tab] auto-completion."
 	sudo cp $0 /usr/bin/showme
+	echo "Setting permissions on /usr/bin/showme"
+	sudo chown root.root /usr/bin/showme
+	sudo chmod 755 /usr/bin/showme
 fi
 
 # Check for pre-requisite packages and install if not present
-if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ] || [ ! -e /usr/sbin/ethtool ]; then
-	echo "WARN: wget and/or ethtool are not installed, installing..."
+if [ ! -e /usr/bin/wget ] || [ ! -e /usr/sbin/ethtool ] || [ ! -e /usr/bin/lspci ] || [ ! -e /usr/bin/lsusb ]; then
+	echo ""
+	echo "INFO: Installing required packages:"
+	echo "$REQD_PACKAGES"
+	echo ""
 	echo "		Please provide password when promted"
-	sudo apt-get install wget ethtool
+	sudo apt-get install "$REQD_PACKAGES"
 fi
 
 # Option to display top level options, used for auto completion
